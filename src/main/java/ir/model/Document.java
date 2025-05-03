@@ -1,8 +1,6 @@
 package ir.model;
 
-/**
- * Rappresenta un documento all'interno del sistema di Information Retrieval.
- */
+
 public class Document {
     private int id;
     private String name;
@@ -21,29 +19,17 @@ public class Document {
         this.content = content;
     }
 
-    /**
-     * Restituisce l'ID del documento.
-     * 
-     * @return L'ID del documento
-     */
+  
     public int getId() {
         return id;
     }
 
-    /**
-     * Restituisce il nome del documento.
-     * 
-     * @return Il nome del documento
-     */
+   
     public String getName() {
         return name;
     }
 
-    /**
-     * Restituisce il contenuto del documento.
-     * 
-     * @return Il contenuto testuale del documento
-     */
+    
     public String getContent() {
         return content;
     }
