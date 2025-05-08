@@ -2,162 +2,184 @@ package ir.index;
 
 import ir.model.Dictionary;
 import ir.model.Document;
+import ir.model.PostingList;
+import ir.util.FileLoader;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import java.util.regex.Matcher;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * Gestisce l'indicizzazione dei documenti.
+ * Implementazione robusta dell'indicizzazione con gestione migliorata degli errori.
  */
 public class Indexer {
+    private List<Document> documents;
     private Dictionary dictionary;
     private StopList stopList;
     private PorterStemmer stemmer;
-    private List<Document> documents;
     private boolean useStopList;
     private boolean useStemming;
-
+    private Pattern tokenPattern;
+    
     /**
-     * Costruttore per un nuovo indicizzatore.
+     * Costruttore dell'indicizzatore.
      */
     public Indexer() {
-        this.dictionary = new Dictionary();
-        this.stopList = new StopList();
-        this.stemmer = new PorterStemmer();
-        this.documents = new ArrayList<>();
-        this.useStopList = false;
-        this.useStemming = false;
+        documents = new ArrayList<>();
+        dictionary = new Dictionary();
+        stemmer = new PorterStemmer();
+        useStopList = false;
+        useStemming = false;
+        
+        // Pattern per tokenizzare il testo (solo parole, no numeri o simboli)
+        tokenPattern = Pattern.compile("[\\p{L}]+");
     }
-
+    
     /**
-     * Imposta se utilizzare la stop list durante l'indicizzazione.
+     * Carica una lista di stop words da file.
      * 
-     * @param useStopList true per utilizzare la stop list, false altrimenti
+     * @param filePath Il percorso del file delle stop words
+     * @throws IOException Se si verifica un errore di I/O
+     */
+    public void loadStopList(String filePath) throws IOException {
+        stopList = new StopList(filePath);
+    }
+    
+    /**
+     * Imposta l'uso della lista di stop words.
+     * 
+     * @param useStopList true per usare la lista di stop words
      */
     public void setUseStopList(boolean useStopList) {
         this.useStopList = useStopList;
     }
-
+    
     /**
-     * Imposta se utilizzare lo stemming durante l'indicizzazione.
+     * Imposta l'uso dello stemming.
      * 
-     * @param useStemming true per utilizzare lo stemming, false altrimenti
+     * @param useStemming true per usare lo stemming
      */
     public void setUseStemming(boolean useStemming) {
         this.useStemming = useStemming;
     }
-
+    
     /**
-     * Carica una stop list da file.
+     * Carica i documenti da una directory.
      * 
-     * @param filePath Il percorso del file contenente le stop words
+     * @param directoryPath Il percorso della directory
      * @throws IOException Se si verifica un errore di I/O
      */
-    public void loadStopList(String filePath) throws IOException {
-        this.stopList = new StopList(filePath);
-        this.useStopList = true;
+    public void loadDocumentsFromDirectory(String directoryPath) throws IOException {
+        System.out.println("Caricamento documenti da " + directoryPath + "...");
+        documents = FileLoader.loadDocumentsFromDirectory(directoryPath);
+        System.out.println("Caricati " + documents.size() + " documenti.");
     }
-
+    
     /**
-     * Carica un documento da un file.
+     * Elabora un termine del documento.
      * 
-     * @param file Il file del documento
-     * @return Il documento caricato
-     * @throws IOException Se si verifica un errore di I/O
+     * @param term Il termine da elaborare
+     * @return Il termine elaborato o null se è una stop word
      */
-    public Document loadDocument(File file) throws IOException {
-        StringBuilder content = new StringBuilder();
+    private String processTerm(String term) {
+        // Converti in minuscolo
+        term = term.toLowerCase();
         
-        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                content.append(line).append("\n");
+        // Verifica se è una stop word
+        if (useStopList && stopList != null && stopList.isStopWord(term)) {
+            return null;
+        }
+        
+        // Applica lo stemming
+        if (useStemming) {
+            try {
+                term = stemmer.stem(term);
+            } catch (Exception e) {
+                System.err.println("Errore nello stemming del termine '" + term + "': " + e.getMessage());
+                // Continua senza stemming in caso di errore
             }
         }
         
-        Document doc = new Document(documents.size() + 1, file.getName(), content.toString());
-        documents.add(doc);
-        
-        return doc;
+        return term;
     }
-
+    
     /**
-     * Carica tutti i documenti da una directory.
+     * Indicizza un singolo documento.
      * 
-     * @param dirPath Il percorso della directory
-     * @throws IOException Se si verifica un errore di I/O
+     * @param doc Il documento da indicizzare
      */
-    public void loadDocumentsFromDirectory(String dirPath) throws IOException {
-        File dir = new File(dirPath);
+    public void indexDocument(Document doc) {
+        System.out.println("Indicizzazione documento " + doc.getId() + ": " + doc.getName());
         
-        if (!dir.exists() || !dir.isDirectory()) {
-            throw new IOException("La directory specificata non esiste o non è una directory valida");
-        }
+        // Mappa temporanea per contare le occorrenze dei termini nel documento
+        Map<String, Integer> termFrequencies = new HashMap<>();
         
-        File[] files = dir.listFiles();
-        if (files != null) {
-            for (File file : files) {
-                if (file.isFile() && !file.isHidden()) {
-                    loadDocument(file);
-                }
-            }
-        }
-    }
-
-    /**
-     * Indicizza un documento.
-     * 
-     * @param document Il documento da indicizzare
-     */
-    public void indexDocument(Document document) {
-        String content = document.getContent().toLowerCase();
+        // Tokenizzazione del contenuto del documento
+        java.util.regex.Matcher matcher = tokenPattern.matcher(doc.getContent());
         
-        // Pattern per estrarre le parole (solo lettere e numeri)
-        Pattern pattern = Pattern.compile("\\b[a-zA-Z0-9]+\\b");
-        Matcher matcher = pattern.matcher(content);
-        
+        // Conteggio delle frequenze dei termini
         while (matcher.find()) {
-            String term = matcher.group().toLowerCase();
+            String term = matcher.group();
             
-            // Salta se è una stop word
-            if (useStopList && stopList.isStopWord(term)) {
+            // Elabora il termine
+            term = processTerm(term);
+            
+            // Salta i termini nulli (stop words)
+            if (term == null || term.isEmpty()) {
                 continue;
             }
             
-            // Applica lo stemming se abilitato
-            if (useStemming) {
-                term = stemmer.stem(term);
-            }
+            // Incrementa la frequenza del termine
+            termFrequencies.put(term, termFrequencies.getOrDefault(term, 0) + 1);
+        }
+        
+        // Aggiungi i termini al dizionario
+        for (Map.Entry<String, Integer> entry : termFrequencies.entrySet()) {
+            String term = entry.getKey();
+            int frequency = entry.getValue();
             
-            // Aggiungi il termine all'indice
-            dictionary.addPosting(term, document.getId());
+            // Aggiunge il termine al dizionario
+            dictionary.addTerm(term, doc.getId(), frequency);
         }
     }
-
+    
     /**
      * Indicizza tutti i documenti caricati.
      */
     public void indexAllDocuments() {
-        for (Document document : documents) {
-            indexDocument(document);
+        System.out.println("Inizio indicizzazione di " + documents.size() + " documenti...");
+        
+        long startTime = System.currentTimeMillis();
+        int processedCount = 0;
+        int errorCount = 0;
+        
+        for (Document doc : documents) {
+            try {
+                indexDocument(doc);
+                processedCount++;
+                
+                // Mostra progresso ogni 100 documenti
+                if (processedCount % 100 == 0) {
+                    System.out.println("Indicizzati " + processedCount + " documenti su " + documents.size());
+                }
+            } catch (Exception e) {
+                errorCount++;
+                System.err.println("Errore nell'indicizzazione del documento " + doc.getId() + ": " + e.getMessage());
+                // Continua con il prossimo documento
+            }
         }
+        
+        long endTime = System.currentTimeMillis();
+        
+        System.out.println("Indicizzazione completata in " + (endTime - startTime) / 1000.0 + " secondi.");
+        System.out.println("Documenti elaborati con successo: " + processedCount);
+        System.out.println("Documenti con errori: " + errorCount);
+        System.out.println("Termini unici nell'indice: " + dictionary.size());
     }
-
-    /**
-     * Restituisce il dizionario dell'indice.
-     * 
-     * @return Il dizionario
-     */
-    public Dictionary getDictionary() {
-        return dictionary;
-    }
-
+    
     /**
      * Restituisce la lista dei documenti.
      * 
@@ -166,19 +188,30 @@ public class Indexer {
     public List<Document> getDocuments() {
         return documents;
     }
-
+    
     /**
-     * Restituisce il documento con l'ID specificato.
+     * Restituisce il dizionario dell'indice.
      * 
-     * @param id L'ID del documento
-     * @return Il documento o null se non esiste
+     * @return Il dizionario
      */
-    public Document getDocument(int id) {
-        for (Document doc : documents) {
-            if (doc.getId() == id) {
-                return doc;
-            }
+    public Dictionary getDictionary() {
+        return dictionary;
+    }
+    
+    /**
+     * Cerca un termine nel dizionario.
+     * 
+     * @param term Il termine da cercare
+     * @return La posting list del termine o null se non trovato
+     */
+    public PostingList search(String term) {
+        // Elabora il termine di ricerca
+        term = processTerm(term);
+        
+        if (term == null || term.isEmpty()) {
+            return new PostingList();
         }
-        return null;
+        
+        return dictionary.getPostingList(term);
     }
 }
