@@ -19,7 +19,7 @@ import java.util.Scanner;
 
 
 public class MainModified {
-    private static final String DOCUMENTS_PATH = "C:\\Users\\migue\\OneDrive\\Desktop\\TUTTO\\neg";
+    private static final String DOCUMENTS_PATH = "C:\\Users\\migue\\OneDrive\\Desktop\\TUTTO";
     private static final String STOPWORDS_PATH = "src/main/resources/stopwords.txt";
     private static final String INDEX_PATH = "src/main/resources/index.ser";
     private static final String DOCUMENTS_INDEX_PATH = "src/main/resources/documents.ser";

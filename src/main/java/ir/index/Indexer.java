@@ -31,10 +31,12 @@ public class Indexer {
         documents = new ArrayList<>();
         dictionary = new Dictionary();
         stemmer = new PorterStemmer();
+        stopList = new StopList(); // Initialize to avoid NullPointerException
         useStopList = false;
         useStemming = false;
         
         // Pattern per tokenizzare il testo (solo parole, no numeri o simboli)
+        // Using \p{L}+ for Unicode letter support
         tokenPattern = Pattern.compile("[\\p{L}]+");
     }
     
@@ -85,6 +87,10 @@ public class Indexer {
      * @return Il termine elaborato o null se è una stop word
      */
     private String processTerm(String term) {
+        if (term == null || term.isEmpty()) {
+            return null;
+        }
+        
         // Converti in minuscolo
         term = term.toLowerCase();
         
@@ -94,7 +100,7 @@ public class Indexer {
         }
         
         // Applica lo stemming
-        if (useStemming) {
+        if (useStemming && term.length() > 1) { // Avoid stemming very short terms
             try {
                 term = stemmer.stem(term);
             } catch (Exception e) {
@@ -103,7 +109,7 @@ public class Indexer {
             }
         }
         
-        return term;
+        return term.isEmpty() ? null : term;
     }
     
     /**
@@ -112,13 +118,25 @@ public class Indexer {
      * @param doc Il documento da indicizzare
      */
     public void indexDocument(Document doc) {
+        if (doc == null) {
+            System.err.println("Errore: tentativo di indicizzare un documento null");
+            return;
+        }
+        
         System.out.println("Indicizzazione documento " + doc.getId() + ": " + doc.getName());
+        
+        // Controllo se il contenuto del documento è null
+        String content = doc.getContent();
+        if (content == null || content.isEmpty()) {
+            System.err.println("Avviso: il documento " + doc.getId() + " ha contenuto vuoto o null");
+            return;
+        }
         
         // Mappa temporanea per contare le occorrenze dei termini nel documento
         Map<String, Integer> termFrequencies = new HashMap<>();
         
         // Tokenizzazione del contenuto del documento
-        java.util.regex.Matcher matcher = tokenPattern.matcher(doc.getContent());
+        java.util.regex.Matcher matcher = tokenPattern.matcher(content);
         
         // Conteggio delle frequenze dei termini
         while (matcher.find()) {
@@ -141,8 +159,17 @@ public class Indexer {
             String term = entry.getKey();
             int frequency = entry.getValue();
             
-            // Aggiunge il termine al dizionario
-            dictionary.addTerm(term, doc.getId(), frequency);
+            try {
+                // Aggiunge il termine al dizionario
+                dictionary.addTerm(term);
+                
+                // Aggiungi il posting ripetutamente in base alla frequenza
+                for (int i = 0; i < frequency; i++) {
+                    dictionary.addPosting(term, doc.getId());
+                }
+            } catch (Exception e) {
+                System.err.println("Errore nell'aggiungere il termine '" + term + "' al dizionario: " + e.getMessage());
+            }
         }
     }
     
@@ -202,16 +229,23 @@ public class Indexer {
      * Cerca un termine nel dizionario.
      * 
      * @param term Il termine da cercare
-     * @return La posting list del termine o null se non trovato
+     * @return La posting list del termine o una lista vuota se non trovato
      */
     public PostingList search(String term) {
-        // Elabora il termine di ricerca
-        term = processTerm(term);
-        
         if (term == null || term.isEmpty()) {
             return new PostingList();
         }
         
-        return dictionary.getPostingList(term);
+        // Elabora il termine di ricerca
+        String processedTerm = processTerm(term);
+        
+        if (processedTerm == null || processedTerm.isEmpty()) {
+            return new PostingList();
+        }
+        
+        PostingList result = dictionary.getPostingList(processedTerm);
+        
+        // Ritorna una lista vuota invece di null se il termine non è trovato
+        return (result != null) ? result : new PostingList();
     }
 }
